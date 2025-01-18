@@ -2,6 +2,8 @@ import pygame
 import os
 import random
 import sys
+import math
+import neat
 
 pygame.init()
 
@@ -40,6 +42,7 @@ class Dinosaur:
         self.dino_jump = False #false bc should not be jumping randomly
         self.jump_vel = self.JUMP_VEL
         self.rect = pygame.Rect(self.X_POS, self.Y_POS, img.get_width(), img.get_height()) #draws rectangle around dino for hitbox
+        self.color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)) #gives dino its random color
         self.step_index = 0 #loops thoguh index so we can get the running dino animation
 
     def update(self):
@@ -67,7 +70,10 @@ class Dinosaur:
         self.step_index += 1
 
     def draw(self, SCREEN):
-        SCREEN.blit(self.image, (self.rect.x, self.rect.y))
+        SCREEN.blit(self.image, (self.rect.x, self.rect.y)) #draws dino
+        pygame.draw.rect(SCREEN, self.color, (self.rect.x, self.rect.y, self.rect.width, self.rect.height), 2) #draws hitbox
+        for obstacle in obstacles:
+            pygame.draw.line(SCREEN, self.color, (self.rect.x + 54, self.rect.y + 12), obstacle.rect.center, 2) #draws line of sight to obsticles
 
 class Obstacle:
     def __init__(self, image, number_of_cacti):
@@ -97,18 +103,34 @@ class LargeCactus(Obstacle):
 
 def remove(index): 
     dinosaurs.pop(index) #removes dinosaurs after they hit an obstacle
+    ge.pop(index) #removes its genomes
+    nets.pop(index) # removes its neural networks
 
-def main():
-    global game_speed, x_pos_bg, y_pos_bg, obstacles, dinosaurs, points
+def distance(pos_a, pos_b):
+    dx = pos_a[0]-pos_b[0]
+    dy = pos_a[1]-pos_b[1]
+    return math.sqrt(dx**2+dy**2)
+
+def eval_genomes(genomes, config): #takes care of the evolution of the dinsaurs genomes, param genomes, param config is the config file
+    global game_speed, x_pos_bg, y_pos_bg, obstacles, dinosaurs, ge, nets, points
     clock = pygame.time.Clock()
     points = 0
 
     obstacles = [] #stores list of obstacles on screen
-    dinosaurs = [Dinosaur()] #list of dinosaurs, can be expanded for the many gens of dinos for NEAT Learning
+    dinosaurs = [] #list of dinosaurs, can be expanded for the many gens of dinos for NEAT Learning
+    ge = [] #stores dictionaries on info of each dino like its fitness level, its nodes, and its connections
+    nets = [] #stores neural nets object of each dino
 
     x_pos_bg = 0
     y_pos_bg = 380 # raises the ya ya ya
     game_speed = 20
+
+    for genome_id, genome in genomes: #loops through all dinos in the population
+        dinosaurs.append(Dinosaur()) #gives it the dinosaur object
+        ge.append(genome) #gives it a genome
+        net = neat.nn.FeedForwardNetwork.create(genome, config) 
+        nets.append(net) #gives it a neural net
+        genome.fitness = 0 #every genome starts at 0
 
     def score(): #when called, it will up the score by one
         global points, game_speed
@@ -117,6 +139,16 @@ def main():
             game_speed += 1
         text = FONT.render(f'Points:  {str(points)}', True, (0, 0, 0))
         SCREEN.blit(text, (950, 50)) #shows it on the screen
+
+    def statistics(): #displays statistics
+        global dinosaurs, game_speed, ge
+        text_1 = FONT.render(f'Dinosaurs Alive:  {str(len(dinosaurs))}', True, (0, 0, 0))
+        text_2 = FONT.render(f'Generation:  {pop.generation+1}', True, (0, 0, 0))
+        text_3 = FONT.render(f'Game Speed:  {str(game_speed)}', True, (0, 0, 0))
+
+        SCREEN.blit(text_1, (50, 450))
+        SCREEN.blit(text_2, (50, 480))
+        SCREEN.blit(text_3, (50, 510))
 
     def background(): #makes the background look like its moving
         global x_pos_bg, y_pos_bg
@@ -156,18 +188,38 @@ def main():
             obstacle.update()
             for i, dinosaur in enumerate(dinosaurs): #checks all dinos
                 if dinosaur.rect.colliderect(obstacle.rect): #if a dino hitbox hits a cactus hitbox
+                    ge[i].fitness -= 1 #lowers fitness score for dying
                     remove(i) #kill the dino that did
 
-        user_input = pygame.key.get_pressed()
-
         for i, dinosaur in enumerate(dinosaurs):
-            if user_input[pygame.K_SPACE]:
+             output = nets[i].activate((dinosaur.rect.y,
+                                       distance((dinosaur.rect.x, dinosaur.rect.y),
+                                        obstacle.rect.midtop))) #pass inputs of each dinosaur, ypos and dist to next obstacle
+             if output[0] > 0.5 and dinosaur.rect.y == dinosaur.Y_POS: #if the output of the neural net is greater than 0.5 bc it can only return between 0 and 1, then jump
                 dinosaur.dino_jump = True
                 dinosaur.dino_run = False
 
+        statistics()
         score()
         background()
         clock.tick(30)
         pygame.display.update()
 
-main()
+#setup for the neat algo
+def run(config_path): #gets path to config.txt
+    global pop
+    config = neat.config.Config(
+        neat.DefaultGenome,
+        neat.DefaultReproduction,
+        neat.DefaultSpeciesSet,
+        neat.DefaultStagnation,
+        config_path
+    )
+
+    pop = neat.Population(config) #gets populating from the config file
+    pop.run(eval_genomes, 50) #run evolution(fitness) function 50 times
+
+if __name__ == '__main__':
+    local_dir = os.path.dirname(__file__)
+    config_path = os.path.join(local_dir, 'config.txt')
+    run(config_path)
