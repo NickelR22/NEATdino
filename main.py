@@ -19,6 +19,9 @@ RUNNING = [pygame.image.load(os.path.join("Assets/Dino", "DinoRun1.png")),
 
 JUMPING = pygame.image.load(os.path.join("Assets/Dino", "DinoJump.png"))
 
+DUCKING = [pygame.image.load(os.path.join("Assets/Dino", "DinoSlide.png")),
+           pygame.image.load(os.path.join("Assets/Dino", "DinoSlide2.png"))]
+
 BG = pygame.image.load(os.path.join("Assets/Other", "Track.png"))
 
 SMALL_CACTUS = [pygame.image.load(os.path.join("Assets/Cactus", "SmallCactus1.png")),
@@ -28,6 +31,8 @@ SMALL_CACTUS = [pygame.image.load(os.path.join("Assets/Cactus", "SmallCactus1.pn
 LARGE_CACTUS = [pygame.image.load(os.path.join("Assets/Cactus", "LargeCactus1.png")),
                 pygame.image.load(os.path.join("Assets/Cactus", "LargeCactus2.png")),
                 pygame.image.load(os.path.join("Assets/Cactus", "LargeCactus3.png"))]
+
+FLYING_CACTUS = [pygame.image.load(os.path.join("Assets/Cactus", "FlyingCactus.png"))]
 
 FONT = pygame.font.Font('freesansbold.ttf', 20)
 
@@ -40,6 +45,7 @@ class Dinosaur:
         self.image = img
         self.dino_run = True #true bc dino should run on its own from the start
         self.dino_jump = False #false bc should not be jumping randomly
+        self.dino_duck = False
         self.jump_vel = self.JUMP_VEL
         self.rect = pygame.Rect(self.X_POS, self.Y_POS, img.get_width(), img.get_height()) #draws rectangle around dino for hitbox
         self.color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)) #gives dino its random color
@@ -50,6 +56,8 @@ class Dinosaur:
             self.run()
         if self.dino_jump:
             self.jump()
+        if self.dino_duck:
+            self.duck()
         if self.step_index >= 10:
             self.step_index = 0 #reset for step index
 
@@ -58,16 +66,24 @@ class Dinosaur:
         if self.dino_jump:
             self.rect.y -= self.jump_vel * 4
             self.jump_vel -= 0.8
-        if self.jump_vel <= -self.JUMP_VEL: #prevent double jump
+        if self.jump_vel <= -self.JUMP_VEL: #if velocity <= -8.5, go back to run
             self.dino_jump = False
+            self.dino_duck = False
             self.dino_run = True
             self.jump_vel = self.JUMP_VEL
+    
+    def duck(self):
+        self.image = DUCKING[self.step_index // 5]
+        self.rect.x = self.X_POS
+        self.rect.y = 348
+        self.step_index += 1
     
     def run(self):
         self.image = RUNNING[self.step_index // 5] #first 5 counts is the first frame of dino run, next 5 is the second frame
         self.rect.x = self.X_POS
         self.rect.y = self.Y_POS
         self.step_index += 1
+
 
     def draw(self, SCREEN):
         SCREEN.blit(self.image, (self.rect.x, self.rect.y)) #draws dino
@@ -76,7 +92,7 @@ class Dinosaur:
             pygame.draw.line(SCREEN, self.color, (self.rect.x + 54, self.rect.y + 12), obstacle.rect.center, 2) #draws line of sight to obsticles
 
 class Obstacle:
-    def __init__(self, image, number_of_cacti):
+    def __init__(self, image, number_of_cacti, type):
         self.image = image
         self.type = number_of_cacti #catus image 1 2 or 3
         self.rect = self.image[self.type].get_rect() # hitbox
@@ -91,15 +107,24 @@ class Obstacle:
         SCREEN.blit(self.image[self.type], self.rect)
 
 class SmallCactus(Obstacle): #inherits from obsticle class
-    def __init__(self, image, number_of_cacti):
-        super().__init__(image, number_of_cacti)
+    def __init__(self, image, number_of_cacti, type):
+        super().__init__(image, number_of_cacti, type)
         self.rect.y = 325
+        self.passed = False
 
 
 class LargeCactus(Obstacle):
-    def __init__(self, image, number_of_cacti):
-        super().__init__(image, number_of_cacti)
+    def __init__(self, image, number_of_cacti, type):
+        super().__init__(image, number_of_cacti, type)
         self.rect.y = 300
+        self.passed = False
+
+class FlyingCactus(Obstacle):
+    def __init__(self, image, number_of_cacti, type):
+        super().__init__(image, number_of_cacti, type)
+        self.rect.y = 80
+        self.rect.width = self.rect.width/2
+        self.passed = False
 
 def remove(index): 
     dinosaurs.pop(index) #removes dinosaurs after they hit an obstacle
@@ -172,16 +197,18 @@ def eval_genomes(genomes, config): #takes care of the evolution of the dinsaurs 
         for dinosaur in dinosaurs:
             dinosaur.update()
             dinosaur.draw(SCREEN)
+        
+        if len(obstacles) == 0:
+            rand_int = random.randint(0, 6) #big, small, or flying cactus
+            if 0<=rand_int<3:
+                obstacles.append(SmallCactus(SMALL_CACTUS, random.randint(0, 2), 0))
+            elif 3<=rand_int<5:
+                obstacles.append(LargeCactus(LARGE_CACTUS, random.randint(0, 2), 0))
+            elif rand_int == 6:
+                obstacles.append(FlyingCactus(FLYING_CACTUS, 0, 1))
 
         if len(dinosaurs) == 0: #if all dinos dead
             break
-        
-        if len(obstacles) == 0:
-            rand_int = random.randint(0, 1) #big or small cactus
-            if rand_int == 0:
-                obstacles.append(SmallCactus(SMALL_CACTUS, random.randint(0, 2)))
-            elif rand_int == 1:
-                obstacles.append(LargeCactus(LARGE_CACTUS, random.randint(0, 2)))
 
         for obstacle in obstacles:
             obstacle.draw(SCREEN)
@@ -190,14 +217,30 @@ def eval_genomes(genomes, config): #takes care of the evolution of the dinsaurs 
                 if dinosaur.rect.colliderect(obstacle.rect): #if a dino hitbox hits a cactus hitbox
                     ge[i].fitness -= 1 #lowers fitness score for dying
                     remove(i) #kill the dino that did
+                if dinosaur.rect.x > obstacle.rect.x and not obstacle.passed:
+                    genome.fitness += 1  # Reward for passing an obstacle
+                    obstacle.passed = True  # Ensure this is only rewarded once
 
-        for i, dinosaur in enumerate(dinosaurs):
-             output = nets[i].activate((dinosaur.rect.y,
-                                       distance((dinosaur.rect.x, dinosaur.rect.y),
-                                        obstacle.rect.midtop))) #pass inputs of each dinosaur, ypos and dist to next obstacle
-             if output[0] > 0.5 and dinosaur.rect.y == dinosaur.Y_POS: #if the output of the neural net is greater than 0.5 bc it can only return between 0 and 1, then jump
+        for i, dinosaur in enumerate(dinosaurs):        
+            if(len(obstacles) != 0):
+                output = nets[i].activate((dinosaur.rect.y, distance((dinosaur.rect.x, dinosaur.rect.y), obstacle.rect.midtop),
+                                            obstacle.type)) #pass inputs of each dinosaur, ypos and dist to next obstacle
+                action = output.index(max(output))  # Determine the action based on the highest output value
+            else:
+                action = 2 
+            if action == 0 and dinosaur.rect.y >= 310:  # Jump
+                dinosaur.rect.y = dinosaur.Y_POS
                 dinosaur.dino_jump = True
+                dinosaur.dino_duck = False
                 dinosaur.dino_run = False
+            elif action == 1 and dinosaur.rect.y >= 310:  # Duck
+                dinosaur.dino_jump = False
+                dinosaur.dino_duck = True
+                dinosaur.dino_run = False
+            elif action == 2 and dinosaur.rect.y >= 310:  # Run
+                dinosaur.dino_jump = False
+                dinosaur.dino_duck = False
+                dinosaur.dino_run = True
 
         statistics()
         score()
